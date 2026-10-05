@@ -268,3 +268,30 @@ These have no standard answers. They are the real point of this lab:
    `totalCollateral()` invariant?
 
 Question 4 is the door into next week's RWA lab.
+
+---
+
+## 8. System Architecture
+
+```mermaid
+flowchart LR
+    User["User"]
+    Collateral["MockUSDC: collateral token"]
+    Vault["Vault: deposit and redeem"]
+    Stable["SimpleStablecoin: sUSD"]
+    Admin["Administrator"]
+
+    User -->|"Approve collateral spending"| Collateral
+    User -->|"Deposit or redeem"| Vault
+    Vault -->|"Transfer collateral in or out"| Collateral
+    Vault -->|"Mint or burn user tokens"| Stable
+    Admin -->|"Manage roles, mint, and pause"| Stable
+```
+
+The vault receives mUSDC before minting an equal amount of sUSD.
+During redemption, it burns the caller's sUSD and returns the same
+amount of mUSDC. Both tokens use six decimals.
+
+Ex5 uses a separate OverCollateralizedVault with MockWETH and
+MockPriceFeed to demonstrate collateral valuation, borrowing limits,
+and liquidation.

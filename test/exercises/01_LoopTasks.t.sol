@@ -6,6 +6,8 @@ import {Test} from "forge-std/Test.sol";
 import {MockUSDC} from "../../src/MockUSDC.sol";
 import {SimpleStablecoin} from "../../src/SimpleStablecoin.sol";
 import {Vault} from "../../src/Vault.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title Ex2 + Ex4 — hands-on tasks: turn red into green
 /// @notice Every `assertTrue(false, "TODO ...")` below is a placeholder. Write the real
@@ -30,6 +32,15 @@ contract LoopTasksTest is Test {
         stable.grantRole(stable.MINTER_ROLE(), address(vault));
     }
 
+    function _depositForAlice(uint256 amount) internal {
+    usdc.faucet(alice, amount);
+
+    vm.startPrank(alice);
+    usdc.approve(address(vault), amount);
+    vault.deposit(amount);
+    vm.stopPrank();
+    }
+
     // ==================================================================
     // Ex2 · the decimals trap: a 6-decimal stablecoin meets 18-decimal intuition
     // ==================================================================
@@ -38,8 +49,28 @@ contract LoopTasksTest is Test {
     ///      deposit(x). Hint: use vm.assume to rule out x == 0, and faucet alice enough
     ///      usdc first.
     function test_Ex2_DepositIncreasesSupplyByExactly(uint96 raw) public {
-        uint256 amount = uint256(raw) % 1_000_000e6;
-        assertTrue(false, "TODO Ex2.1");
+    // 将输入限制在合理范围，并排除零。
+    uint256 amount = uint256(raw) % 1_000_000e6;
+    vm.assume(amount > 0);
+
+    // 给测试用户 Alice 准备抵押品。
+    usdc.faucet(alice, amount);
+
+    // 记录存入前的状态。
+    uint256 supplyBefore = stable.totalSupply();
+    uint256 balanceBefore = stable.balanceOf(alice);
+    uint256 collateralBefore = vault.totalCollateral();
+
+    // 模拟 Alice 授权并存入。
+    vm.startPrank(alice);
+    usdc.approve(address(vault), amount);
+    vault.deposit(amount);
+    vm.stopPrank();
+
+    // 检查供应量、个人余额和抵押品是否同步增加。
+    assertEq(stable.totalSupply(), supplyBefore + amount);
+    assertEq(stable.balanceOf(alice), balanceBefore + amount);
+    assertEq(vault.totalCollateral(), collateralBefore + amount);
     }
 
     /// @dev Run deposit with 1000e18 instead of 1000e6, see what happens, then assert what
@@ -47,39 +78,138 @@ contract LoopTasksTest is Test {
     ///      There is no expected answer here; the point is that you run it yourself and
     ///      read the numbers.
     function test_Ex2_DecimalsTrap() public {
-        assertTrue(false, "TODO Ex2.2");
+    // 故意使用 18 位小数的写法。
+    uint256 amount = 1000e18;
+
+    assertEq(usdc.decimals(), 6);
+    assertEq(stable.decimals(), 6);
+
+    // 模拟水龙头可以发放足够多的抵押品。
+    usdc.faucet(alice, amount);
+
+    vm.startPrank(alice);
+    usdc.approve(address(vault), amount);
+    vault.deposit(amount);
+    vm.stopPrank();
+
+    // 操作成功，账面上的抵押与发行仍然匹配。
+    assertEq(stable.balanceOf(alice), amount);
+    assertEq(stable.totalSupply(), amount);
+    assertEq(vault.totalCollateral(), stable.totalSupply());
+
+    // 根据实际小数位，把最小单位换算成完整代币数量。
+    uint256 unit = 10 ** uint256(stable.decimals());
+    uint256 actualTokens = stable.balanceOf(alice) / unit;
+
+    // 实际得到 10^15 枚，远多于原本想要的 1000 枚。
+    assertEq(actualTokens, 1_000_000_000_000_000);
+    assertEq(actualTokens / 1000, 1_000_000_000_000);
     }
 
     // ==================================================================
     // Ex4 · permissions and pausing: where the guard is, who holds the key
     // ==================================================================
+function test_Ex4_Mint_RevertsForNonMinter() public {
+    bytes32 role = stable.MINTER_ROLE();
 
-    /// @dev The attacker has no MINTER_ROLE, so calling mint directly must revert. Use
-    ///      vm.expectRevert + abi.encodeWithSelector to pin down the exact error.
-    function test_Ex4_Mint_RevertsForNonMinter() public {
-        assertTrue(false, "TODO Ex4.1");
-    }
+    vm.startPrank(attacker);
+    vm.expectRevert(
+        abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            attacker,
+            role
+        )
+    );
+    stable.mint(attacker, 100e6);
+    vm.stopPrank();
 
-    /// @dev After pause(), an ordinary transfer must revert
-    function test_Ex4_Pause_BlocksTransfers() public {
-        assertTrue(false, "TODO Ex4.2");
-    }
+    assertEq(stable.balanceOf(attacker), 0);
+    assertEq(stable.totalSupply(), 0);
+}
 
-    /// @dev What pause() freezes is _update, so redemption is frozen along with everything
-    ///      else — why is that bad news in a real crisis?
-    ///      (This is STUDENT-QUESTIONS.md B1 and B2.)
-    function test_Ex4_Pause_BlocksRedeem() public {
-        assertTrue(false, "TODO Ex4.3");
-    }
+function test_Ex4_Pause_BlocksTransfers() public {
+    uint256 amount = 100e6;
+    _depositForAlice(amount);
 
-    /// @dev An attacker cannot burn someone else's balance
-    function test_Ex4_AttackerCannotBurnOthersBalance() public {
-        assertTrue(false, "TODO Ex4.4");
-    }
+    // 当前测试合约就是管理员，可以暂停。
+    stable.pause();
 
-    /// @dev ...but the vault can, because it holds MINTER_ROLE and burn() answers to that
-    ///      same role. This test proves the backdoor exists; it does not justify it.
-    function test_Ex4_VaultHoldsTheKey_CanBurnAnyonesBalance() public {
-        assertTrue(false, "TODO Ex4.5");
-    }
+    vm.startPrank(alice);
+    vm.expectRevert(Pausable.EnforcedPause.selector);
+    stable.transfer(attacker, 10e6);
+    vm.stopPrank();
+
+    // 转账失败后，双方余额不变。
+    assertEq(stable.balanceOf(alice), amount);
+    assertEq(stable.balanceOf(attacker), 0);
+}
+
+function test_Ex4_Pause_BlocksRedeem() public {
+    uint256 amount = 100e6;
+    _depositForAlice(amount);
+
+    stable.pause();
+
+    vm.startPrank(alice);
+    vm.expectRevert(Pausable.EnforcedPause.selector);
+    vault.redeem(amount);
+    vm.stopPrank();
+
+    // 赎回失败：币没有销毁，抵押品也没有退回。
+    assertEq(stable.balanceOf(alice), amount);
+    assertEq(stable.totalSupply(), amount);
+    assertEq(vault.totalCollateral(), amount);
+    assertEq(usdc.balanceOf(alice), 0);
+
+    // 恢复后可以正常赎回，进一步确认阻碍来自暂停。
+    stable.unpause();
+
+    vm.prank(alice);
+    vault.redeem(amount);
+
+    assertEq(stable.balanceOf(alice), 0);
+    assertEq(stable.totalSupply(), 0);
+    assertEq(vault.totalCollateral(), 0);
+    assertEq(usdc.balanceOf(alice), amount);
+}
+
+function test_Ex4_AttackerCannotBurnOthersBalance() public {
+    uint256 amount = 100e6;
+    _depositForAlice(amount);
+    bytes32 role = stable.MINTER_ROLE();
+
+    vm.startPrank(attacker);
+    vm.expectRevert(
+        abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            attacker,
+            role
+        )
+    );
+    stable.burn(alice, 40e6);
+    vm.stopPrank();
+
+    assertEq(stable.balanceOf(alice), amount);
+    assertEq(stable.totalSupply(), amount);
+    assertEq(vault.totalCollateral(), amount);
+}
+
+function test_Ex4_VaultHoldsTheKey_CanBurnAnyonesBalance() public {
+    uint256 amount = 100e6;
+    _depositForAlice(amount);
+
+    // Alice 没有授权金库花费她的 sUSD。
+    assertEq(stable.allowance(alice, address(vault)), 0);
+
+    // 模拟金库身份，直接调用代币合约的 burn。
+    vm.prank(address(vault));
+    stable.burn(alice, 40e6);
+
+    assertEq(stable.balanceOf(alice), 60e6);
+    assertEq(stable.totalSupply(), 60e6);
+
+    // 这里只销毁代币，没有执行退回抵押品的流程。
+    assertEq(vault.totalCollateral(), amount);
+    assertEq(usdc.balanceOf(alice), 0);
+}
 }
