@@ -295,3 +295,17 @@ amount of mUSDC. Both tokens use six decimals.
 Ex5 uses a separate OverCollateralizedVault with MockWETH and
 MockPriceFeed to demonstrate collateral valuation, borrowing limits,
 and liquidation.
+---
+## 9. Sepolia Deployment
+
+The following contracts were deployed on Ethereum Sepolia (chain ID: `11155111`). All three contracts have verified source code on Etherscan.
+
+| Contract | Address | Explorer |
+|---|---|---|
+| MockUSDC | `0x937D217321cFa788d9030928Aa8709049d3BD1Fe` | [Verified source](https://sepolia.etherscan.io/address/0x937D217321cFa788d9030928Aa8709049d3BD1Fe#code) |
+| SimpleStablecoin | `0xDCe50ddCe23cAb3e2A6b10cf3bb59EDaB79feA05` | [Verified source](https://sepolia.etherscan.io/address/0xDCe50ddCe23cAb3e2A6b10cf3bb59EDaB79feA05#code) |
+| Vault | `0x4De47AAc15299822a70f1Adf48E3DD87aD156252` | [Verified source](https://sepolia.etherscan.io/address/0x4De47AAc15299822a70f1Adf48E3DD87aD156252#code) |
+
+Deployment completed in block `11848931`. The vault was granted `MINTER_ROLE` during deployment.
+
+Source verification confirms that the published source matches the deployed bytecode; it is not a security audit.
