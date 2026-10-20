@@ -309,3 +309,19 @@ The following contracts were deployed on Ethereum Sepolia (chain ID: `11155111`)
 Deployment completed in block `11848931`. The vault was granted `MINTER_ROLE` during deployment.
 
 Source verification confirms that the published source matches the deployed bytecode; it is not a security audit.
+
+## 10. Tier 3: Peg Stability Module
+
+Implemented an inventory-funded PSM that exchanges sUSD and a separate mock USD token at a fixed 1:1 rate with zero swap fees. Both tokens must have matching decimals.
+
+Users approve the input token before swapping. Each swap transfers existing tokens without minting or burning sUSD. The PSM's sUSD inventory is obtained through the original collateral-backed vault, so swaps preserve its backing relationship. Swaps revert when output inventory is insufficient.
+
+Six tests passed, covering both swap directions, round-trip balances and backing, missing approval, insufficient liquidity, and zero amounts.
+
+Run:
+
+```bash
+forge test --match-path test/tier3/PSM.t.sol -vv
+```
+
+The fixed exchange rate can support arbitrage when sUSD trades away from parity, assuming the quote token retains its dollar value and sufficient inventory is available. These tests verify swap behavior; they do not demonstrate an actual market-price recovery.
